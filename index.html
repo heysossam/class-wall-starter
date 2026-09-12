@@ -67,17 +67,119 @@
       box-shadow: 0 2px 6px rgba(225, 29, 72, 0.05);
     }
 
-    /* 로그인 버튼이 들어올 자리 */
+    /* 로그인 영역 */
     #userArea {
-      margin: 12px 0;
-      padding: 10px 16px;
-      background: rgba(255, 255, 255, 0.7);
+      margin: 14px 0 22px;
+      padding: 12px 18px;
+      background: rgba(255, 255, 255, 0.9);
       backdrop-filter: blur(8px);
-      border-radius: 10px;
+      border-radius: 14px;
       color: var(--text-muted);
       font-size: 14px;
-      border: 1px solid rgba(226, 232, 240, 0.8);
-      display: inline-block;
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+      max-width: 580px;
+    }
+    .user-form {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      width: 100%;
+    }
+    .user-form-title {
+      font-weight: 700;
+      color: #334155;
+      margin-right: 4px;
+      font-size: 13px;
+    }
+    .user-form input {
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      background: #f8fafc;
+    }
+    .user-form input:focus {
+      border-color: var(--primary);
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+    }
+    .user-form input[type="password"] {
+      width: 140px;
+      letter-spacing: 2px;
+    }
+    .auth-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .auth-btn:hover {
+      background: #4338ca;
+    }
+    .user-logged-in {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      gap: 12px;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: #1e293b;
+    }
+    .user-avatar {
+      background: #e0e7ff;
+      color: #4338ca;
+      padding: 4px 8px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .logout-btn {
+      background: #f8fafc;
+      color: #64748b;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .logout-btn:hover {
+      background: #fee2e2;
+      color: #dc2626;
+      border-color: #fca5a5;
+    }
+    .memo-author-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: #475569;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .memo-author-badge.my-memo {
+      color: #4338ca;
+      background: #e0e7ff;
+      border-color: #c7d2fe;
     }
 
     /* 메모 쓰는 칸 */
@@ -177,7 +279,8 @@
     }
     .memo-header {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 6px;
     }
     .delete-btn {
