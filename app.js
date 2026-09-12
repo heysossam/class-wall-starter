@@ -1,32 +1,124 @@
 // ===================================================
-// 우리 반 담벼락 - 시작점
+// 우리 반 담벼락 - Firebase Firestore & 데이터베이스 연동
 //
-// 메모를 쓰면 올린 순서대로 담벼락에 붙습니다.
-// 지금은 데이터가 아래 배열에만 들어 있어서,
-// 브라우저를 새로고침하면 전부 사라집니다.
+// Firebase 무료 Spark 요금제 기반 실시간 데이터베이스(Firestore)를 사용합니다.
+// Firebase 설정(firebaseConfig)을 넣으면 모든 학생 화면에서 실시간 동기화되고,
+// 설정 전에도 브라우저 저장소(localStorage)에 안전하게 자동 저장됩니다.
 // ===================================================
 
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+  onSnapshot,
+  updateDoc,
+  increment
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// --- 메모 목록 ---
-// createdAt 은 메모를 쓴 시각(밀리초)입니다. 이 값으로 순서를 정합니다.
-// likes 는 학생들이 누른 좋아요(하트) 개수입니다.
-// author 와 pin 은 작성자 이름과 4자리 비밀번호입니다.
-let memos = [
-  { id: 1, text: "오늘 과학 시간에 한 실험이 재미있었다", createdAt: 1757030400000, likes: 5, author: "호기심이", pin: "0000" },
-  { id: 2, text: "궁금한 점 - 물은 왜 100도에서 끓나요?", createdAt: 1757030500000, likes: 2, author: "질문왕", pin: "0000" },
-  { id: 3, text: "모둠 친구들이 도와줘서 고마웠다", createdAt: 1757030600000, likes: 4, author: "행복이", pin: "0000" }
+
+// ===================================================
+// 1. Firebase 설정 (무료 Spark 요금제)
+// Firebase 콘솔(https://console.firebase.google.com/)에서 프로젝트를 만들고
+// 웹 앱을 추가한 뒤 받은 본인의 설정을 여기에 붙여넣으세요.
+// ===================================================
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+// Firebase 설정이 유효한지 확인
+const isFirebaseReady = Boolean(
+  firebaseConfig.projectId &&
+  firebaseConfig.projectId !== "YOUR_PROJECT_ID" &&
+  firebaseConfig.apiKey !== "YOUR_API_KEY"
+);
+
+let db = null;
+let memosCollection = null;
+
+if (isFirebaseReady) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    memosCollection = collection(db, "memos");
+  } catch (err) {
+    console.error("Firebase 초기화 오류:", err);
+  }
+}
+
+
+// ===================================================
+// 2. 메모 데이터 및 로컬 저장소(localStorage) 관리
+// ===================================================
+
+const LOCAL_STORAGE_KEY = "class_wall_memos_v1";
+
+// 기본 메모 목록 (처음 접속 시 표시할 예시 데이터)
+const defaultMemos = [
+  { id: "1", text: "오늘 과학 시간에 한 실험이 재미있었다", createdAt: 1757030400000, likes: 5, author: "호기심이", pin: "0000" },
+  { id: "2", text: "궁금한 점 - 물은 왜 100도에서 끓나요?", createdAt: 1757030500000, likes: 2, author: "질문왕", pin: "0000" },
+  { id: "3", text: "모둠 친구들이 도와줘서 고마웠다", createdAt: 1757030600000, likes: 4, author: "행복이", pin: "0000" }
 ];
 
-let nextId = 4;  // 새 메모에 붙일 번호
+// 로컬 저장소에서 메모 불러오기
+function getLocalMemos() {
+  try {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error("로컬 메모 읽기 오류:", e);
+  }
+  return defaultMemos;
+}
+
+// 로컬 저장소에 메모 저장하기
+function saveLocalMemos(memoList) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(memoList));
+  } catch (e) {
+    console.error("로컬 메모 저장 오류:", e);
+  }
+}
+
+// 현재 메모 목록
+let memos = isFirebaseReady ? [] : getLocalMemos();
+
+// Firebase Firestore 실시간 구독 (새 글, 삭제, 좋아요 자동 반영)
+if (isFirebaseReady && memosCollection) {
+  const q = query(memosCollection, orderBy("createdAt", "asc"));
+  onSnapshot(q, function (snapshot) {
+    memos = [];
+    snapshot.forEach(function (docSnap) {
+      memos.push({
+        id: docSnap.id,
+        ...docSnap.data()
+      });
+    });
+    render();
+  }, function (error) {
+    console.error("Firestore 실시간 동기화 오류:", error);
+  });
+}
 
 
 // ===================================================
-// 로그인 관리 (간단한 이름과 4자리 비밀번호)
+// 3. 로그인 관리 (간단한 이름과 4자리 비밀번호)
 // ===================================================
 
 let currentUser = null;
 
-// 브라우저에 저장된 이전 로그인 정보가 있으면 복원합니다
+// 브라우저 세션에 저장된 이전 로그인 정보 복원
 try {
   const savedUser = sessionStorage.getItem("class_wall_user");
   if (savedUser) {
@@ -116,15 +208,29 @@ function renderUserArea() {
   }
 }
 
+// 저장소 상태 표시 업데이트
+function updateStorageNotice() {
+  const noticeEl = document.getElementById("storageNotice");
+  if (!noticeEl) return;
+
+  if (isFirebaseReady) {
+    noticeEl.innerHTML = "☁️ <strong>Firebase Firestore 실시간 클라우드 DB</strong>에 연결되었습니다. 모든 친구들과 실시간으로 공유됩니다!";
+    noticeEl.style.background = "#eff6ff";
+    noticeEl.style.borderColor = "#bfdbfe";
+    noticeEl.style.color = "#1d4ed8";
+  } else {
+    noticeEl.innerHTML = "💾 <strong>데이터베이스 저장 기능이 활성화되었습니다.</strong> 새로고침해도 메모가 안전하게 유지됩니다. (Firebase 설정 시 실시간 연동)";
+  }
+}
+
 
 // ===================================================
-// 데이터를 다루는 함수들
-// 백엔드 1 시간에 이 함수들이 Firestore를 쓰는 코드로 바뀝니다.
+// 4. 데이터를 다루는 함수들
+// 백엔드: 이 함수들이 Firestore 데이터베이스와 연동됩니다.
 // ===================================================
 
 // 메모를 읽어 옵니다.
-// 백엔드 1: 여기가 Firestore에서 가져오는 코드로 바뀝니다.
-//           순서는 orderBy("createdAt") 으로 맞춥니다.
+// Firestore 순서는 query의 orderBy("createdAt") 으로 맞춥니다.
 function loadMemos() {
   return memos.slice().sort(function (a, b) {
     return a.createdAt - b.createdAt;
@@ -132,8 +238,8 @@ function loadMemos() {
 }
 
 // 메모를 새로 씁니다.
-// 백엔드 2: 여기에 "누가 썼는지"(uid)를 함께 저장하게 됩니다.
-function addMemo(text) {
+// 백엔드 2: 여기에 "누가 썼는지"(author, pin)를 함께 저장합니다.
+async function addMemo(text) {
   if (!currentUser) {
     alert("메모를 작성하려면 먼저 상단에서 이름과 4자리 비밀번호로 로그인해주세요!");
     const nameInput = document.getElementById("loginName");
@@ -141,23 +247,41 @@ function addMemo(text) {
     return false;
   }
 
-  memos.push({
-    id: nextId,
+  const memoData = {
     text: text,
     createdAt: Date.now(),
     likes: 0,
     author: currentUser.name,
     pin: currentUser.pin
-  });
-  nextId = nextId + 1;
+  };
+
+  if (isFirebaseReady && memosCollection) {
+    try {
+      await addDoc(memosCollection, memoData);
+      // Firestore onSnapshot에 의해 화면이 자동으로 갱신됩니다.
+    } catch (e) {
+      console.error("Firestore 저장 실패:", e);
+      alert("데이터베이스 저장에 실패했습니다. Firebase 보안 규칙을 확인해주세요.");
+      return false;
+    }
+  } else {
+    // 로컬 저장소 모드
+    const newId = "memo_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4);
+    memos.push({
+      id: newId,
+      ...memoData
+    });
+    saveLocalMemos(memos);
+    render();
+  }
   return true;
 }
 
 // 메모를 지웁니다.
-// 백엔드 2: 지금은 누구든 남의 메모를 지울 수 있습니다. 이걸 막는 것이 과제입니다.
-function deleteMemo(id) {
+// 내가 작성한 메모이거나 4자리 비밀번호가 일치해야 지울 수 있습니다.
+async function deleteMemo(id) {
   const memo = memos.find(function (m) {
-    return m.id === id;
+    return String(m.id) === String(id);
   });
   if (!memo) return;
 
@@ -177,19 +301,43 @@ function deleteMemo(id) {
     }
   }
 
-  memos = memos.filter(function (m) {
-    return m.id !== id;
-  });
-  render();
+  if (isFirebaseReady && db) {
+    try {
+      await deleteDoc(doc(db, "memos", String(id)));
+    } catch (e) {
+      console.error("Firestore 삭제 실패:", e);
+      alert("데이터베이스 삭제에 실패했습니다.");
+    }
+  } else {
+    // 로컬 저장소 모드
+    memos = memos.filter(function (m) {
+      return String(m.id) !== String(id);
+    });
+    saveLocalMemos(memos);
+    render();
+  }
 }
 
 // 좋아요(하트)를 누릅니다.
-function likeMemo(id) {
+async function likeMemo(id) {
   const memo = memos.find(function (m) {
-    return m.id === id;
+    return String(m.id) === String(id);
   });
-  if (memo) {
+  if (!memo) return;
+
+  if (isFirebaseReady && db) {
+    try {
+      await updateDoc(doc(db, "memos", String(id)), {
+        likes: increment(1)
+      });
+    } catch (e) {
+      console.error("Firestore 좋아요 업데이트 실패:", e);
+    }
+  } else {
+    // 로컬 저장소 모드
     memo.likes = (memo.likes || 0) + 1;
+    saveLocalMemos(memos);
+    render();
   }
 }
 
@@ -320,4 +468,5 @@ if (submitBtn) {
 
 // 첫 화면 그리기
 renderUserArea();
+updateStorageNotice();
 render();
