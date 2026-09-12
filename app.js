@@ -6,7 +6,7 @@
 // 설정 전에도 브라우저 저장소(localStorage)에 안전하게 자동 저장됩니다.
 // ===================================================
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import {
   getFirestore,
   collection,
@@ -18,28 +18,25 @@ import {
   onSnapshot,
   updateDoc,
   increment
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 
 // ===================================================
 // 1. Firebase 설정 (무료 Spark 요금제)
-// Firebase 콘솔(https://console.firebase.google.com/)에서 프로젝트를 만들고
-// 웹 앱을 추가한 뒤 받은 본인의 설정을 여기에 붙여넣으세요.
 // ===================================================
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCw7SfjfDSMoyvpXJ3oYOnElSVG2bj9Exg",
+  authDomain: "wall-class.firebaseapp.com",
+  projectId: "wall-class",
+  storageBucket: "wall-class.firebasestorage.app",
+  messagingSenderId: "730664953899",
+  appId: "1:730664953899:web:7d6eb312d3b19555b8626e"
 };
 
 // Firebase 설정이 유효한지 확인
 const isFirebaseReady = Boolean(
   firebaseConfig.projectId &&
-  firebaseConfig.projectId !== "YOUR_PROJECT_ID" &&
-  firebaseConfig.apiKey !== "YOUR_API_KEY"
+  firebaseConfig.apiKey
 );
 
 let db = null;
@@ -147,12 +144,12 @@ function renderUserArea() {
 
     const logoutBtn = document.getElementById("logoutBtn");
     if (logoutBtn) {
-      logoutBtn.onclick = function () {
+      logoutBtn.addEventListener("click", function () {
         currentUser = null;
         sessionStorage.removeItem("class_wall_user");
         renderUserArea();
         render();
-      };
+      });
     }
 
     const inputArea = document.getElementById("input");
@@ -172,7 +169,7 @@ function renderUserArea() {
 
     const loginForm = document.getElementById("loginForm");
     if (loginForm) {
-      loginForm.onsubmit = function (e) {
+      loginForm.addEventListener("submit", function (e) {
         e.preventDefault();
         const nameInput = document.getElementById("loginName");
         const pinInput = document.getElementById("loginPin");
@@ -198,7 +195,7 @@ function renderUserArea() {
 
         const inputArea = document.getElementById("input");
         if (inputArea) inputArea.focus();
-      };
+      });
     }
 
     const inputArea = document.getElementById("input");
@@ -385,9 +382,9 @@ function makeMemo(memo) {
   del.className = "delete-btn";
   del.title = "메모 지우기";
   del.textContent = "×";
-  del.onclick = function () {
+  del.addEventListener("click", function () {
     deleteMemo(memo.id);
-  };
+  });
   header.appendChild(del);
   div.appendChild(header);
 
@@ -412,10 +409,10 @@ function makeMemo(memo) {
   likeBtn.type = "button";
   likeBtn.title = "좋아요 누르기";
   likeBtn.innerHTML = `❤️ <span>${memo.likes || 0}</span>`;
-  likeBtn.onclick = function () {
+  likeBtn.addEventListener("click", function () {
     likeMemo(memo.id);
     render();
-  };
+  });
   footer.appendChild(likeBtn);
 
   div.appendChild(footer);
@@ -454,15 +451,15 @@ function handleSubmit() {
   }
 }
 
-input.onkeydown = function (e) {
+input.addEventListener("keydown", function (e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     handleSubmit();
   }
-};
+});
 
 if (submitBtn) {
-  submitBtn.onclick = handleSubmit;
+  submitBtn.addEventListener("click", handleSubmit);
 }
 
 
