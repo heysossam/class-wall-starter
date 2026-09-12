@@ -17,7 +17,9 @@ import {
   orderBy,
   onSnapshot,
   updateDoc,
-  increment
+  increment,
+  arrayUnion,
+  arrayRemove
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 
@@ -59,11 +61,51 @@ if (isFirebaseReady) {
 
 const LOCAL_STORAGE_KEY = "class_wall_memos_v1";
 
+// 사용 가능한 반응 이모지 목록
+const EMOJIS = ["❤️", "👍", "💡", "👏", "😊"];
+
+// 댓글 창이 열려 있는 메모 ID 목록
+const openComments = new Set();
+
 // 기본 메모 목록 (처음 접속 시 표시할 예시 데이터)
 const defaultMemos = [
-  { id: "1", text: "오늘 과학 시간에 한 실험이 재미있었다", createdAt: 1757030400000, likes: 5, author: "호기심이", pin: "0000" },
-  { id: "2", text: "궁금한 점 - 물은 왜 100도에서 끓나요?", createdAt: 1757030500000, likes: 2, author: "질문왕", pin: "0000" },
-  { id: "3", text: "모둠 친구들이 도와줘서 고마웠다", createdAt: 1757030600000, likes: 4, author: "행복이", pin: "0000" }
+  {
+    id: "1",
+    text: "오늘 과학 시간에 한 실험이 재미있었다",
+    createdAt: 1757030400000,
+    likes: 5,
+    likedBy: [],
+    reactions: { "❤️": 5, "👍": 2, "💡": 1, "👏": 1, "😊": 0 },
+    author: "호기심이",
+    pin: "0000",
+    comments: [
+      { id: "c1", text: "어떤 실험이 가장 재미있었나요?", author: "탐구왕", createdAt: 1757030460000 }
+    ]
+  },
+  {
+    id: "2",
+    text: "궁금한 점 - 물은 왜 100도에서 끓나요?",
+    createdAt: 1757030500000,
+    likes: 2,
+    likedBy: [],
+    reactions: { "❤️": 2, "👍": 1, "💡": 3, "👏": 0, "😊": 0 },
+    author: "질문왕",
+    pin: "0000",
+    comments: [
+      { id: "c2", text: "기압이 1기압일 때 물이 100도에서 끓어요!", author: "과학꿈나무", createdAt: 1757030560000 }
+    ]
+  },
+  {
+    id: "3",
+    text: "모둠 친구들이 도와줘서 고마웠다",
+    createdAt: 1757030600000,
+    likes: 4,
+    likedBy: [],
+    reactions: { "❤️": 4, "👍": 3, "💡": 0, "👏": 4, "😊": 1 },
+    author: "행복이",
+    pin: "0000",
+    comments: []
+  }
 ];
 
 // 로컬 저장소에서 메모 불러오기
@@ -205,22 +247,6 @@ function renderUserArea() {
   }
 }
 
-// 저장소 상태 표시 업데이트
-function updateStorageNotice() {
-  const noticeEl = document.getElementById("storageNotice");
-  if (!noticeEl) return;
-
-  if (isFirebaseReady) {
-    noticeEl.innerHTML = "☁️ <strong>Firebase Firestore 실시간 클라우드 DB</strong>에 연결되었습니다. 모든 친구들과 실시간으로 공유됩니다!";
-    noticeEl.style.background = "#eff6ff";
-    noticeEl.style.borderColor = "#bfdbfe";
-    noticeEl.style.color = "#1d4ed8";
-  } else {
-    noticeEl.innerHTML = "💾 <strong>데이터베이스 저장 기능이 활성화되었습니다.</strong> 새로고침해도 메모가 안전하게 유지됩니다. (Firebase 설정 시 실시간 연동)";
-  }
-}
-
-
 // ===================================================
 // 4. 데이터를 다루는 함수들
 // 백엔드: 이 함수들이 Firestore 데이터베이스와 연동됩니다.
@@ -248,6 +274,9 @@ async function addMemo(text) {
     text: text,
     createdAt: Date.now(),
     likes: 0,
+    likedBy: [],
+    reactions: { "❤️": 0, "👍": 0, "💡": 0, "👏": 0, "😊": 0 },
+    comments: [],
     author: currentUser.name,
     pin: currentUser.pin
   };
@@ -315,8 +344,8 @@ async function deleteMemo(id) {
   }
 }
 
-// 좋아요(하트)를 누릅니다.
-async function likeMemo(id) {
+// 이모지 반응(❤️, 👍, 💡, 👏, 😊)을 누릅니다
+async function reactMemo(id, emoji) {
   const memo = memos.find(function (m) {
     return String(m.id) === String(id);
   });
@@ -325,14 +354,159 @@ async function likeMemo(id) {
   if (isFirebaseReady && db) {
     try {
       await updateDoc(doc(db, "memos", String(id)), {
+        [`reactions.${emoji}`]: increment(1),
         likes: increment(1)
       });
     } catch (e) {
-      console.error("Firestore 좋아요 업데이트 실패:", e);
+      console.error("이모지 반응 업데이트 실패:", e);
     }
   } else {
     // 로컬 저장소 모드
+    if (!memo.reactions) {
+      memo.reactions = { "❤️": memo.likes || 0 };
+    }
+    memo.reactions[emoji] = (memo.reactions[emoji] || 0) + 1;
     memo.likes = (memo.likes || 0) + 1;
+    saveLocalMemos(memos);
+    render();
+  }
+}
+
+// 좋아요(하트)를 누릅니다
+// 규칙: 본인 글에는 누를 수 없고, 친구 글에 1인 1회만 누를 수 있습니다 (다시 누르면 취소).
+async function likeMemo(id) {
+  if (!currentUser) {
+    alert("좋아요를 누르려면 먼저 상단에서 이름과 4자리 비밀번호로 로그인해주세요!");
+    const nameInput = document.getElementById("loginName");
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  const memo = memos.find(function (m) {
+    return String(m.id) === String(id);
+  });
+  if (!memo) return;
+
+  // 자신의 글에는 좋아요를 누를 수 없음
+  if (memo.author && memo.author === currentUser.name) {
+    alert("자신의 글에는 좋아요를 누를 수 없습니다. 친구들의 글에 좋아요를 남겨보세요! 😊");
+    return;
+  }
+
+  const likedBy = Array.isArray(memo.likedBy) ? memo.likedBy : [];
+  const alreadyLiked = likedBy.includes(currentUser.name);
+
+  if (isFirebaseReady && db) {
+    try {
+      if (alreadyLiked) {
+        // 이미 누른 경우: 좋아요 취소 (1회 제한 유지)
+        await updateDoc(doc(db, "memos", String(id)), {
+          likedBy: arrayRemove(currentUser.name),
+          likes: increment(-1)
+        });
+      } else {
+        // 처음 누르는 경우: 좋아요 등록
+        await updateDoc(doc(db, "memos", String(id)), {
+          likedBy: arrayUnion(currentUser.name),
+          likes: increment(1)
+        });
+      }
+    } catch (e) {
+      console.error("좋아요 처리 실패:", e);
+      alert("좋아요 처리에 실패했습니다.");
+    }
+  } else {
+    // 로컬 저장소 모드
+    if (alreadyLiked) {
+      memo.likedBy = likedBy.filter(function (name) {
+        return name !== currentUser.name;
+      });
+      memo.likes = Math.max(0, (memo.likes || 1) - 1);
+    } else {
+      memo.likedBy = [...likedBy, currentUser.name];
+      memo.likes = (memo.likes || 0) + 1;
+    }
+    saveLocalMemos(memos);
+    render();
+  }
+}
+
+// 댓글을 새로 작성합니다
+async function addComment(memoId, text) {
+  if (!currentUser) {
+    alert("댓글을 작성하려면 먼저 상단에서 이름과 4자리 비밀번호로 로그인해주세요!");
+    const nameInput = document.getElementById("loginName");
+    if (nameInput) nameInput.focus();
+    return false;
+  }
+
+  const comment = {
+    id: "c_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+    text: text,
+    author: currentUser.name,
+    createdAt: Date.now()
+  };
+
+  const memo = memos.find(function (m) {
+    return String(m.id) === String(memoId);
+  });
+  if (!memo) return false;
+
+  openComments.add(String(memoId));
+
+  if (isFirebaseReady && db) {
+    try {
+      await updateDoc(doc(db, "memos", String(memoId)), {
+        comments: arrayUnion(comment)
+      });
+    } catch (e) {
+      console.error("댓글 저장 실패:", e);
+      alert("댓글 저장에 실패했습니다.");
+      return false;
+    }
+  } else {
+    // 로컬 저장소 모드
+    if (!memo.comments) memo.comments = [];
+    memo.comments.push(comment);
+    saveLocalMemos(memos);
+    render();
+  }
+  return true;
+}
+
+// 댓글을 삭제합니다
+async function deleteComment(memoId, commentId) {
+  const memo = memos.find(function (m) {
+    return String(m.id) === String(memoId);
+  });
+  if (!memo || !memo.comments) return;
+
+  const comment = memo.comments.find(function (c) {
+    return c.id === commentId;
+  });
+  if (!comment) return;
+
+  if (currentUser && currentUser.name === comment.author) {
+    if (!confirm("작성하신 댓글을 삭제하시겠습니까?")) return;
+  } else {
+    alert("본인이 작성한 댓글만 삭제할 수 있습니다.");
+    return;
+  }
+
+  const updatedComments = memo.comments.filter(function (c) {
+    return c.id !== commentId;
+  });
+
+  if (isFirebaseReady && db) {
+    try {
+      await updateDoc(doc(db, "memos", String(memoId)), {
+        comments: updatedComments
+      });
+    } catch (e) {
+      console.error("댓글 삭제 실패:", e);
+    }
+  } else {
+    memo.comments = updatedComments;
     saveLocalMemos(memos);
     render();
   }
@@ -352,7 +526,7 @@ function render() {
   });
 }
 
-// 메모 한 장 만들기 (예쁜 포스트잇 스타일, 작성자 표시 및 하트 버튼)
+// 메모 한 장 만들기 (예쁜 포스트잇 스타일, 작성자 표시, 다양한 이모지 반응 및 댓글)
 function makeMemo(memo) {
   const div = document.createElement("div");
   // 색상 테마를 순서대로 적용 (theme-0 ~ theme-4)
@@ -394,7 +568,7 @@ function makeMemo(memo) {
   textDiv.textContent = memo.text;
   div.appendChild(textDiv);
 
-  // 하단 영역 (작성 시간 및 좋아요 하트 버튼)
+  // 하단 영역 (작성 시간 및 좋아요 / 댓글 버튼)
   const footer = document.createElement("div");
   footer.className = "memo-footer";
 
@@ -403,19 +577,128 @@ function makeMemo(memo) {
   timeSpan.textContent = formatTime(memo.createdAt);
   footer.appendChild(timeSpan);
 
-  // 좋아요(하트) 버튼
+  const actionsDiv = document.createElement("div");
+  actionsDiv.className = "memo-actions";
+
+  // 1. 좋아요 버튼 (다른 친구 글 1회 제한 및 토글)
+  const likedBy = Array.isArray(memo.likedBy) ? memo.likedBy : [];
+  const isLiked = Boolean(currentUser && likedBy.includes(currentUser.name));
+  const likeCount = (memo.likedBy ? memo.likedBy.length : memo.likes) || 0;
+
   const likeBtn = document.createElement("button");
-  likeBtn.className = "like-btn";
+  likeBtn.className = `like-btn ${isLiked ? 'liked' : ''} ${isMine ? 'my-post' : ''}`;
   likeBtn.type = "button";
-  likeBtn.title = "좋아요 누르기";
-  likeBtn.innerHTML = `❤️ <span>${memo.likes || 0}</span>`;
+  likeBtn.title = isMine ? "자신의 글에는 좋아요를 누를 수 없습니다" : (isLiked ? "좋아요 취소" : "좋아요 누르기");
+  likeBtn.innerHTML = `<span class="like-icon">${isLiked ? '❤️' : '🤍'}</span> <span class="like-count">${likeCount}</span>`;
   likeBtn.addEventListener("click", function () {
     likeMemo(memo.id);
+  });
+  actionsDiv.appendChild(likeBtn);
+
+  // 2. 댓글 토글 버튼
+  const comments = memo.comments || [];
+  const isCommentsOpen = openComments.has(String(memo.id));
+
+  const commentToggleBtn = document.createElement("button");
+  commentToggleBtn.className = `comment-toggle-btn ${isCommentsOpen ? 'active' : ''}`;
+  commentToggleBtn.type = "button";
+  commentToggleBtn.title = isCommentsOpen ? "댓글 접기" : "댓글 펼치기";
+  commentToggleBtn.innerHTML = `💬 <span>${comments.length > 0 ? comments.length : '댓글'}</span>`;
+  commentToggleBtn.addEventListener("click", function () {
+    if (openComments.has(String(memo.id))) {
+      openComments.delete(String(memo.id));
+    } else {
+      openComments.add(String(memo.id));
+    }
     render();
   });
-  footer.appendChild(likeBtn);
+  actionsDiv.appendChild(commentToggleBtn);
 
+  footer.appendChild(actionsDiv);
   div.appendChild(footer);
+
+  // 댓글 섹션 (펼쳐졌을 때만 표시)
+  if (isCommentsOpen) {
+    const commentsSection = document.createElement("div");
+    commentsSection.className = "comments-section";
+
+    // 댓글 목록
+    const commentsList = document.createElement("div");
+    commentsList.className = "comments-list";
+
+    if (comments.length === 0) {
+      const emptyMsg = document.createElement("div");
+      emptyMsg.style.fontSize = "11px";
+      emptyMsg.style.color = "#94a3b8";
+      emptyMsg.textContent = "아직 댓글이 없습니다. 첫 댓글을 남겨보세요!";
+      commentsList.appendChild(emptyMsg);
+    } else {
+      comments.forEach(function (comment) {
+        const item = document.createElement("div");
+        item.className = "comment-item";
+
+        const cHeader = document.createElement("div");
+        cHeader.className = "comment-header";
+
+        const cAuthor = document.createElement("span");
+        cAuthor.className = "comment-author";
+        cAuthor.textContent = `👤 ${comment.author}`;
+        cHeader.appendChild(cAuthor);
+
+        // 작성자 본인일 경우 삭제 버튼 표시
+        if (currentUser && currentUser.name === comment.author) {
+          const cDel = document.createElement("button");
+          cDel.className = "comment-del-btn";
+          cDel.textContent = "×";
+          cDel.title = "댓글 삭제";
+          cDel.addEventListener("click", function () {
+            deleteComment(memo.id, comment.id);
+          });
+          cHeader.appendChild(cDel);
+        }
+        item.appendChild(cHeader);
+
+        const cText = document.createElement("div");
+        cText.className = "comment-text";
+        cText.textContent = comment.text;
+        item.appendChild(cText);
+
+        commentsList.appendChild(item);
+      });
+    }
+    commentsSection.appendChild(commentsList);
+
+    // 댓글 작성 폼
+    const commentForm = document.createElement("form");
+    commentForm.className = "comment-form";
+
+    const cInput = document.createElement("input");
+    cInput.className = "comment-input";
+    cInput.type = "text";
+    cInput.placeholder = currentUser ? "댓글을 입력하세요..." : "로그인 후 댓글 작성 가능";
+    cInput.maxLength = 100;
+    if (!currentUser) cInput.disabled = true;
+
+    const cSubmit = document.createElement("button");
+    cSubmit.className = "comment-submit-btn";
+    cSubmit.type = "submit";
+    cSubmit.textContent = "등록";
+    if (!currentUser) cSubmit.disabled = true;
+
+    commentForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const val = cInput.value.trim();
+      if (!val) return;
+      addComment(memo.id, val);
+    });
+
+    commentForm.appendChild(cInput);
+    commentForm.appendChild(cSubmit);
+    commentsSection.appendChild(commentForm);
+
+    div.appendChild(commentsSection);
+  }
+
   return div;
 }
 
@@ -439,11 +722,11 @@ function formatTime(timestamp) {
 const input = document.getElementById("input");
 const submitBtn = document.getElementById("submitBtn");
 
-function handleSubmit() {
+async function handleSubmit() {
   const text = input.value.trim();
   if (text === "") return;
 
-  const success = addMemo(text);
+  const success = await addMemo(text);
   if (success) {
     input.value = "";
     render();
@@ -465,5 +748,4 @@ if (submitBtn) {
 
 // 첫 화면 그리기
 renderUserArea();
-updateStorageNotice();
 render();
